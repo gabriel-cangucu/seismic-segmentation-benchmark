@@ -133,7 +133,7 @@ def test(args, dataset, device, criterion, n_classes, indices, fold, model=None)
     print('Loss function:  ', args.loss_function)
     print('Batch size:     ', args.batch_size)
 
-    print(f'\nNumber of test examples: {len(indices)} (slices {indices[0]} to {indices[-1]})')
+    print(f'\nNumber of test examples: {len(indices)}')
 
     print('\nWeighted loss ENABLED' if args.weighted_loss else 'Weighted loss DISABLED')
     print(f'Testing with {"INLINES" if args.orientation == "in" else "CROSSLINES"}')

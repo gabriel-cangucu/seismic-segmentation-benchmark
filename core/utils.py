@@ -6,10 +6,21 @@ from datetime import datetime
 from PIL import Image
 
 
-def tensor_to_image(output, color_palette='viridis'):
+def tensor_to_image(output, color_palette):
     # Defining color palettes
     color_map = {
-        'viridis': np.array([
+        'viridis_8': np.array([
+            (68, 1, 84),
+            (70, 50, 126),
+            (54, 92, 141),
+            (39, 127, 142),
+            (31, 161, 135),
+            (74, 193, 109),
+            (160, 218, 57),
+            (253, 231, 37)
+        ], dtype=np.uint8),
+        
+        'viridis_10': np.array([
             (253, 231, 37),
             (181, 222, 43),
             (110, 206, 88),
@@ -33,9 +44,9 @@ def tensor_to_image(output, color_palette='viridis'):
     # Finding the class with the highest probability for each pixel
     output = np.argmax(output, axis=0)
 
-    # Mapping the class indices to colors
+    # Mapping the class indices to colors and mirroring
     image = color_map[color_palette][output]
-    image = image.reshape((height, width, 3))
+    image = np.flip(image.reshape((height, width, 3)), axis=0)
 
     image = Image.fromarray(image)
     image = image.rotate(270, expand=True)
@@ -80,8 +91,13 @@ def store_results(args, results, n_classes):
         with open(os.path.join(results_folder, 'scores' + suffix + '.json'), 'w') as json_buffer:
             json.dump(scores, json_buffer, indent=4)
         
-        # Storing model outputs as images
-        color_palette = 'binary' if n_classes == 2 else 'viridis'
-        save_images(results[fold_number]['preds'], images_folder, color_palette)
+    # Storing model outputs as images
+    color_palette = {
+        2: 'binary',
+        8: 'viridis_8',
+        10: 'viridis_10'
+    }
+
+    save_images(results[fold_number]['preds'], images_folder, color_palette[n_classes])
     
-    print(f'\nResults saved in {args.results_path}')
+    print(f'\nResults saved in {results_folder}')
