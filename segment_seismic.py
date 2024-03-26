@@ -8,40 +8,36 @@ from sklearn.model_selection import KFold
 import core
 from core.loader.data_loader import *
 from core.models import load_empty_model
-from core.metrics import RunningMetrics, EarlyStopper
+from core.metrics import RunningMetrics
 from core.utils import store_results
 
 
 def train_test_split(args, dataset):
-    if args.cross_validation:
-        kf = KFold(n_splits=5, shuffle=False)
+    kf = KFold(n_splits=5, shuffle=False)
 
-        if args.few_shot:
-            # 20% train / 80% test
-            splits = [
-                (test_idx.tolist(), train_idx.tolist()) for train_idx, test_idx in kf.split(dataset)
-            ]
-        else:
-            # 80% train / 20% test
-            splits = [
-                (train_idx.tolist(), test_idx.tolist()) for train_idx, test_idx in kf.split(dataset)
-            ]
+    if args.swap_train_test:
+        # 20% train / 80% test
+        splits = [
+            (test_idx.tolist(), train_idx.tolist()) for train_idx, test_idx in kf.split(dataset)
+        ]
     else:
-        if args.few_shot:
-            # 20% train / 80% test
-            test_ratio = 0.8
-        else:
-            # 80% train / 20% test
-            test_ratio = 0.2
-
-        test_size  = int(len(dataset) * test_ratio)
-        splits = [(list(range(test_size, len(dataset))), list(range(0, test_size)))]
-
-    return splits
+        # 80% train / 20% test
+        splits = [
+            (train_idx.tolist(), test_idx.tolist()) for train_idx, test_idx in kf.split(dataset)
+        ]
+    
+    if args.cross_validation:
+        return splits
+    else:
+        return [splits[args.test_fold - 1]]
 
 
-def train(args, dataset, device, criterion, n_classes, indices):
-    print('\nCreating model...')
+def train(args, dataset, device, criterion, n_classes, indices, model):
+    if args.model_path is None:
+        print('\nCreating model...\n')
+    else:
+        print(f'\nResuming training from stored model: {args.model_path}\n')
+
     print('Architecture:   ', args.architecture.upper())
     print('Optimizer:      ', args.optimizer)
     print('Device:         ', device)
@@ -60,9 +56,6 @@ def train(args, dataset, device, criterion, n_classes, indices):
         batch_size=args.batch_size,
         shuffle=True
     )
-
-    model = load_empty_model(args.architecture, n_classes)
-    model = model.to(device)
 
     # Defining the optimizer
     optimizer_map = {
@@ -126,8 +119,9 @@ def train(args, dataset, device, criterion, n_classes, indices):
     return model, results
 
 
-def test(args, dataset, device, criterion, n_classes, indices, fold, model=None):
-    print('\nTesting model...')
+def test(args, dataset, device, criterion, n_classes, indices, model):
+    print('\nTesting the model...\n')
+
     print('Architecture:   ', args.architecture.upper())
     print('Device:         ', device)
     print('Loss function:  ', args.loss_function)
@@ -149,20 +143,6 @@ def test(args, dataset, device, criterion, n_classes, indices, fold, model=None)
 
     # Storing the loss for each epoch
     test_loss_list  = []
-
-    if model is None:
-        print(f'\nTraining is OFF. Loading stored model from {args.model_path}')
-
-        model = load_empty_model(args.architecture, n_classes)
-        model = model.to(device)
-        
-        # model_path = os.path.join(args.model_path, f'model_fold_{fold}.pt')
-
-        if not os.path.isfile(args.model_path):
-            raise FileNotFoundError(f'No such file or directory for stored model: {args.model_path}')
-
-        # Loading previously stored model
-        model.load_state_dict(torch.load(args.model_path))
     
     preds = {}
     slice_idx = indices[0]
@@ -173,7 +153,6 @@ def test(args, dataset, device, criterion, n_classes, indices, fold, model=None)
         test_loss = 0
 
         print(datetime.now().strftime('\n%Y/%m/%d %H:%M:%S'))
-        print('Testing the model...\n')
 
         for images, labels in tqdm(test_loader, ascii=' >='):
             images = images.type(torch.FloatTensor).to(device)
@@ -250,35 +229,52 @@ def run(args):
 
     for fold_number, (train_indices, test_indices) in enumerate(splits):
         if args.cross_validation:
-            print(f'\n======== FOLD {fold_number + 1}/5 ========')
+            print(f'\n================= FOLD {fold_number + 1}/5 =================')
+        else:
+            print(f'\n================= FOLD {args.test_fold} =================')
         
         train_indices, test_indices = splits[fold_number]
         
         train_set = torch.utils.data.Subset(dataset, train_indices)
         test_set = torch.utils.data.Subset(dataset, test_indices)
 
+        model = load_empty_model(args.architecture, dataset.get_n_classes())
+        model = model.to(device)
+
+        # Loading previously stored weights if provided
+        if args.model_path is not None:
+            if not os.path.isfile(args.model_path):
+                raise FileNotFoundError(f'No such file or directory for stored model: {args.model_path}')
+        
+            model.load_state_dict(torch.load(args.model_path))
+
         if args.train:
+            # Training the model
             model, train_results = train(
                 args,
-                train_set,
+                dataset=train_set,
                 device=device,
                 criterion=criterion,
                 n_classes=dataset.get_n_classes(),
-                indices=train_indices
+                indices=train_indices,
+                model=model
             )
         else:
-            model = None
-            train_results = {}
-            # train_results = load_train_results()
+            print('\nTraining is OFF.')
 
+            if args.model_path is None:
+                raise FileNotFoundError('No directory for stored model was provided.')
+
+            train_results = {}
+
+        # Testing the model
         preds, test_results = test(
             args,
-            test_set,
+            dataset=test_set,
             device=device,
             criterion=criterion,
             n_classes=dataset.get_n_classes(),
             indices=test_indices,
-            fold=fold_number,
             model=model
         )
 
@@ -291,7 +287,7 @@ def run(args):
             **test_results
         })
 
-    store_results(args, results, n_classes=dataset.get_n_classes())
+    store_results(args, results)
 
 
 if __name__ == '__main__':
@@ -337,6 +333,13 @@ if __name__ == '__main__':
         default=False,
         help='Whether to use 5-fold cross validation'
     )
+    parser.add_argument('-f', '--test-fold',
+        dest='test_fold',
+        type=int,
+        default=1,
+        help='Which fold to use for testing',
+        choices=[i for i in range(1, 6)]
+    )
     parser.add_argument('-L', '--loss-function',
         dest='loss_function',
         type=str,
@@ -372,7 +375,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', '--n-epochs',
         dest='n_epochs',
         type=int,
-        default=20,
+        default=30,
         help='Number of epochs'
     )
     parser.add_argument('-O', '--orientation',
@@ -382,14 +385,14 @@ if __name__ == '__main__':
         help='Whether the model should be trained using inlines or crosslines',
         choices=['in', 'cross']
     )
-    parser.add_argument('-f', '--faulty-slices-list',
+    parser.add_argument('-F', '--faulty-slices-list',
         dest='faulty_slices_list',
         type=str,
         default=None,
         help='Path to a json file containing a list of faulty slices to remove'
     )
-    parser.add_argument('-F', '--few-shot',
-        dest='few_shot',
+    parser.add_argument('-s', '--swap-train-test',
+        dest='swap_train_test',
         action='store_true',
         default=False,
         help='Whether to swap the train and test sets to train on less data'
