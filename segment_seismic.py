@@ -280,7 +280,7 @@ def run(args):
 
         results.append({
             'model': model,
-            'preds': preds,
+            'preds': preds.copy(),
             'train_indices': train_indices,
             'test_indices': test_indices,
             **train_results,

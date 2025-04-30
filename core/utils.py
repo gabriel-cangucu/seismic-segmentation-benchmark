@@ -9,16 +9,16 @@ from PIL import Image
 def tensor_to_image(output):
     # Defining color palettes
     color_map = np.array([
-        (253, 231, 37),
-        (181, 222, 43),
-        (110, 206, 88),
-        (53, 183, 121),
-        (31, 158, 137),
-        (38, 130, 142),
-        (49, 104, 142),
-        (62, 73, 137),
+        (68, 1, 84),
         (72, 40, 120),
-        (68, 1, 84)
+        (62, 73, 137),
+        (49, 104, 142),
+        (38, 130, 142),
+        (31, 158, 137),
+        (53, 183, 121),
+        (110, 206, 88),
+        (181, 222, 43),
+        (253, 231, 37)
     ], dtype=np.uint8)
     
     _, height, width = output.shape
@@ -38,8 +38,9 @@ def tensor_to_image(output):
 
 def save_images(preds, preds_path):    
     for idx, pred in preds.items():
-        pred = tensor_to_image(pred.cpu())
-        pred.save(os.path.join(preds_path, f'pred_{idx}.png'))
+        # pred = tensor_to_image(pred.cpu())
+        pred = np.argmax(pred.cpu(), axis=0)
+        np.save(os.path.join(preds_path, f'pred_{idx}.npy'), pred)
 
 
 def store_results(args, results):
@@ -73,7 +74,7 @@ def store_results(args, results):
         with open(os.path.join(results_folder, 'scores' + suffix + '.json'), 'w') as json_buffer:
             json.dump(scores, json_buffer, indent=4)
 
-    # Storing model outputs as images
-    save_images(results[fold_number]['preds'], images_folder)
+        # Storing model outputs as images
+        save_images(results[fold_number]['preds'], images_folder)
     
     print(f'\nResults saved in {results_folder}')
